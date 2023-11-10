@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gpu-metric-collector
+  namespace: gpu
+  labels:
+    name: gpu-metric-collector
+spec:
+  type: NodePort
+  ports:
+  - port: 9323
+    targetPort: 9323
+    nodePort: 32553
+    protocol: TCP
+  selector:
+    name: gpu-metric-collector

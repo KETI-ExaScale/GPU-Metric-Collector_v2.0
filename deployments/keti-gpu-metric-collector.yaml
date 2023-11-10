@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gpu-metric-collector
+  namespace: gpu
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: gpu-metric-collector
+  namespace: gpu
+subjects:
+- kind: ServiceAccount
+  name: gpu-metric-collector
+  namespace: gpu
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gpu-metric-collector
+  namespace: gpu
+  labels:
+    name: gpu-metric-collector
+spec:
+  type: NodePort
+  ports:
+  - port: 9323
+    targetPort: 9323
+    nodePort: 32553
+    protocol: TCP
+  selector:
+    name: gpu-metric-collector
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keti-gpu-metric-collector
+  namespace: gpu
+spec:
+  selector:
+    matchLabels:
+      name: gpu-metric-collector
+  replicas: 4
+  template:
+    metadata:
+      labels:
+        name: gpu-metric-collector
+    spec:
+      serviceAccountName: gpu-metric-collector
+      imagePullSecrets: 
+      - name: regcred
+      restartPolicy: Always
+      containers:
+      - name: gpu-metric-collector
+        image: ketidevit2/keti-gpu-metric-collector:v1.0
+        imagePullPolicy: Always
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: DEBUGG_LEVEL
+          value: "LEVEL1"
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+
+
