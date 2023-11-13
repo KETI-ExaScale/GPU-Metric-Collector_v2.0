@@ -3,6 +3,7 @@ package collector
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
@@ -12,7 +13,7 @@ import (
 const configMapName = "gpu-metric-collector-configmap"
 
 const (
-	Policy1 = "metric-collecting-cycle"
+	Policy1 = "metric-collecting-interval"
 )
 
 func AddAllEventHandlers(metricCollector *MetricCollector, informerFactory informers.SharedInformerFactory) {
@@ -40,23 +41,25 @@ func AddAllEventHandlers(metricCollector *MetricCollector, informerFactory infor
 func (m *MetricCollector) SetPolicy(obj interface{}) {
 	configMap := obj.(*v1.ConfigMap)
 
-	collectingCycle, _ := strconv.ParseInt(configMap.Data["metric-collecting-cycle"], 0, 32)
+	sec, _ := strconv.ParseInt(configMap.Data["metric-collecting-interval"], 0, 32)
 
-	m.CollectCycle = int32(collectingCycle)
+	interval := time.Duration(sec) * time.Second
+	m.Interval = &interval
 
-	KETI_LOG_L2("\n-----:: GPU Metric Collector Policy List ::-----")
-	KETI_LOG_L2(fmt.Sprintf("[policy 1] %s : %d", Policy1, collectingCycle))
+	KETI_LOG_L1("\n-----:: GPU Metric Collector Policy List ::-----")
+	KETI_LOG_L1(fmt.Sprintf("[policy 1] %s : %d", Policy1, interval))
+	KETI_LOG_L1("\n------------------------------------------------")
 }
 
 func (m *MetricCollector) UpdatePolicy(oldObj, newObj interface{}) {
 	configMap := newObj.(*v1.ConfigMap)
 
-	collectingCycle, _ := strconv.ParseInt(configMap.Data["metric-collecting-cycle"], 0, 32)
+	sec, _ := strconv.ParseInt(configMap.Data["metric-collecting-interval"], 0, 32)
 
-	m.CollectCycle = int32(collectingCycle)
+	interval := time.Duration(sec) * time.Second
+	m.Interval = &interval
 
-	KETI_LOG_L2("\n-----:: Updated GPU Metric Collector Policy List ::-----")
-	KETI_LOG_L2(fmt.Sprintf("[policy 1] %s : %d", Policy1, collectingCycle))
-
-	//updateCollectingCycle()
+	KETI_LOG_L1("\n-----:: Updated GPU Metric Collector Policy List ::-----")
+	KETI_LOG_L1(fmt.Sprintf("[policy 1] %s : %d", Policy1, interval))
+	KETI_LOG_L1("\n--------------------------------------------------------")
 }
