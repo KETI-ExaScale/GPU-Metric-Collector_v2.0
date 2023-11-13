@@ -69,5 +69,13 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.hostIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gpu-metric-collector-configmap
+  namespace: gpu
+data:
+  metric-collecting-cycle : 5
 
 

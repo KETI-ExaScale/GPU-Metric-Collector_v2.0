@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: gpu-metric-collector-configmap
+  name: gpu-metric-collctor-configmap
   namespace: gpu
 data:
-  metric-collecting-cycle : 5
+  metric-collecting-interval : "5"

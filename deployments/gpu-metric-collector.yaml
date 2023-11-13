@@ -19,15 +19,15 @@ spec:
       restartPolicy: Always
       containers:
       - name: gpu-metric-collector
-        image: ketidevit2/keti-gpu-metric-collector:v1.12
-        # imagePullPolicy: Always
+        image: ketidevit2/keti-gpu-metric-collector:v1.21
+        imagePullPolicy: Always
         env:
         - name: NODE_NAME
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
         - name: DEBUGG_LEVEL
-          value: "LEVEL1"
+          value: "LEVEL3"
         - name: NODE_IP
           valueFrom:
             fieldRef:
