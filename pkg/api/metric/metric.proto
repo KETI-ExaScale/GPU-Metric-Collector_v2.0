@@ -12,8 +12,10 @@ message Request {}
 
 message MultiMetric {
   string node_name = 1;
-  NodeMetric node_metric = 2;
-  map<string, GPUMetric> gpu_metrics = 3;
+  int64 gpu_count = 2;
+  repeated NVLink nvlink_info = 3;
+  NodeMetric node_metric = 4;
+  map<string, GPUMetric> gpu_metrics = 5;
 }
 
 message NodeMetric {
@@ -30,7 +32,7 @@ message NodeMetric {
 message GPUMetric {
     int32 index = 1;
     string gpu_name = 2;
-    int32 architecture = 3;
+    string architecture = 3;
     int64 max_clock = 4;
     int64 cudacore = 5;
     float bandwidth = 6;
@@ -43,18 +45,28 @@ message GPUMetric {
     int64 power_used = 13;
     int64 pci_rx = 14;
     int64 pci_tx = 15;
-    int64 memory_gauge = 16;
-    int64 memory_counter = 17;
-    int64 temperature = 18;
-    int64 utilization = 19;
-    int64 fan_speed = 20;
-    map<string, PodMetric> pod_metrics = 21;
+    int64 temperature = 16;
+    int64 utilization = 17;
+    int64 fan_speed = 18;
+    int64 pod_count = 19;
+    map<string, PodMetric> pod_metrics = 20;
 }
 
 message PodMetric {
-  int64 milli_cpu_used = 1;
-  int64 memory_used = 2;
-  int64 storage_used = 3;
-  int64 network_rx = 4;
-  int64 network_tx = 5;
+  uint32 pod_pid = 1;
+  string container_id = 2;
+  int32 index = 3;
+  int32 gpu_mps_count = 4;
+  int64 node_milli_cpu_used = 5;
+  int64 node_memory_used = 6;
+  int64 node_storage_used = 7;
+  int64 node_network_rx = 8;
+  int64 node_network_tx = 9;
+  int64 gpu_memory_used = 10;
+}
+
+message NVLink {
+  string gpu1uuid = 1;
+  string gpu2uuid = 2;
+  int32 lanecount = 3;
 }
