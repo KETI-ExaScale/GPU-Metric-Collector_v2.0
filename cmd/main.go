@@ -21,8 +21,6 @@ func main() {
 	informerFactory := informers.NewSharedInformerFactory(metricCollector.HostKubeClient, 0)
 	collector.AddAllEventHandlers(metricCollector, informerFactory)
 
-	metricCollector.MultiMetric.DumpMultiMetric()
-
 	wg.Add(1)
 	go informerFactory.Start(quitChan)
 
