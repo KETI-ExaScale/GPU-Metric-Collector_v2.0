@@ -21,21 +21,17 @@ func main() {
 	informerFactory := informers.NewSharedInformerFactory(metricCollector.HostKubeClient, 0)
 	collector.AddAllEventHandlers(metricCollector, informerFactory)
 
-	wg.Add(1)
 	go informerFactory.Start(quitChan)
 
 	wg.Add(1)
-	metricCollector.RunMetricCollector(ctx)
+	metricCollector.RunMetricCollector(ctx, &wg)
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
-	for {
-		select {
-		case <-signalChan:
-			close(quitChan)
-			cancel()
-			wg.Wait()
-			os.Exit(0)
-		}
-	}
+
+	<-signalChan
+	close(quitChan)
+	cancel()
+	wg.Wait()
+	os.Exit(0)
 }

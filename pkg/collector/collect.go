@@ -2,19 +2,27 @@ package collector
 
 import (
 	"context"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
 	"gpu-metric-collector/pkg/api/metric"
+	"io/ioutil"
 	"log"
+	"math"
 	"net"
+	"net/http"
+	"sync"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	"google.golang.org/grpc"
+	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 )
 
-func (m *MetricCollector) RunMetricCollector(ctx context.Context) {
-	go m.StartGRPCServer(ctx)
+func (m *MetricCollector) RunMetricCollector(ctx context.Context, wg *sync.WaitGroup) {
+	go m.StartGRPCServer(ctx, wg)
 	go wait.UntilWithContext(ctx, m.MetricCollectingCycle, *m.Interval)
 }
 
@@ -31,9 +39,15 @@ func (m *MetricCollector) MetricCollectingCycle(ctx context.Context) {
 
 	m.SafeMultiMetric.MultiMetric.NodeMetric.MemoryFree, _ = node.Status.Allocatable.Memory().AsInt64()
 	m.SafeMultiMetric.MultiMetric.NodeMetric.MilliCpuFree = node.Status.Allocatable.Cpu().MilliValue()
-	m.SafeMultiMetric.MultiMetric.NodeMetric.StorageFree, _ = node.Status.Allocatable.Storage().AsInt64()
-	m.SafeMultiMetric.MultiMetric.NodeMetric.NetworkRx = 0 //??
-	m.SafeMultiMetric.MultiMetric.NodeMetric.NetworkTx = 0 //??
+	m.SafeMultiMetric.MultiMetric.NodeMetric.StorageFree, _ = node.Status.Allocatable.StorageEphemeral().AsInt64()
+
+	if network, err := m.getNodeNetworkStats(); err != nil {
+		m.SafeMultiMetric.MultiMetric.NodeMetric.NetworkRx = 0
+		m.SafeMultiMetric.MultiMetric.NodeMetric.NetworkTx = 0
+	} else {
+		m.SafeMultiMetric.MultiMetric.NodeMetric.NetworkRx, _ = network.NetworkRxBytes.AsInt64()
+		m.SafeMultiMetric.MultiMetric.NodeMetric.NetworkTx, _ = network.NetworkTxBytes.AsInt64()
+	}
 
 	if m.SafeMultiMetric.MultiMetric.GpuCount != 0 {
 		defer func() {
@@ -93,15 +107,80 @@ func (m *MetricCollector) GetMultiMetric(context.Context, *metric.Request) (*met
 	return m.SafeMultiMetric.MultiMetric, nil
 }
 
-func (m *MetricCollector) StartGRPCServer(ctx context.Context) {
+func (m *MetricCollector) StartGRPCServer(ctx context.Context, wg *sync.WaitGroup) {
 	lis, err := net.Listen("tcp", ":9323")
 	if err != nil {
 		klog.Fatalf("failed to listen: %v", err)
 	}
+
 	metricServer := grpc.NewServer()
 	metric.RegisterMetricCollectorServer(metricServer, m)
-	KETI_LOG_L1("[gRPC] metric collector server running...")
-	if err := metricServer.Serve(lis); err != nil {
-		klog.Fatalf("failed to serve: %v", err)
+
+	KETI_LOG_L3("[gRPC] metric collector server running...")
+
+	go func() {
+		if err := metricServer.Serve(lis); err != nil {
+			klog.Fatalf("failed to serve: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	wg.Done()
+}
+
+func (m *MetricCollector) getNodeNetworkStats() (*Network, error) {
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
+
+	client := &http.Client{
+		Transport: transport,
+	}
+
+	response, err := client.Do(m.NetworkRequest)
+	if err != nil {
+		KETI_LOG_L3(fmt.Sprintf("[error] get node network stats error: %v", err))
+		return nil, err
+	}
+
+	defer response.Body.Close()
+
+	body, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		KETI_LOG_L3(fmt.Sprintf("[error] get node network stats error: %v", err))
+		return nil, err
+	}
+
+	summary := &Summary{}
+
+	if err := json.Unmarshal(body, &summary); err != nil {
+		KETI_LOG_L3(fmt.Sprintf("[error] get node network stats error: %v", err))
+		return nil, err
+	}
+
+	var RX_Usage uint64 = 0
+	var TX_Usage uint64 = 0
+
+	for _, Interface := range summary.Node.Network.Interfaces {
+		RX_Usage = RX_Usage + *Interface.RxBytes
+		TX_Usage = TX_Usage + *Interface.TxBytes
+	}
+
+	network := &Network{}
+
+	network.NetworkRxBytes = *uint64Quantity(RX_Usage, 0)
+	network.NetworkRxBytes.Format = resource.BinarySI
+
+	network.NetworkTxBytes = *uint64Quantity(TX_Usage, 0)
+	network.NetworkTxBytes.Format = resource.BinarySI
+
+	return network, nil
+}
+
+func uint64Quantity(val uint64, scale resource.Scale) *resource.Quantity {
+	if val <= math.MaxInt64 {
+		return resource.NewScaledQuantity(int64(val), scale)
+	}
+
+	return resource.NewScaledQuantity(int64(val/10), resource.Scale(1)+scale)
 }

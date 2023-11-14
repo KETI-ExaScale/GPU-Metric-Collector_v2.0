@@ -19,7 +19,7 @@ spec:
       restartPolicy: Always
       containers:
       - name: gpu-metric-collector
-        image: ketidevit2/keti-gpu-metric-collector:v1.21
+        image: ketidevit2/keti-gpu-metric-collector:v1.31
         imagePullPolicy: Always
         env:
         - name: NODE_NAME
