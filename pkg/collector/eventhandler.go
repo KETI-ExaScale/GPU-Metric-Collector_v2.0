@@ -28,6 +28,7 @@ func AddAllEventHandlers(metricCollector *MetricCollector, informerFactory infor
 				default:
 					KETI_LOG_L3("<error> configmap error\n")
 					return false
+					
 				}
 			},
 			Handler: cache.ResourceEventHandlerFuncs{
