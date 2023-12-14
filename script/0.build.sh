@@ -10,7 +10,7 @@ dir=$( pwd )
 
 image_name="keti-gpu-metric-collector"
 registry="ketidevit2"
-version="v1.31"
+version="v1.4"
 
 #binary file
 go build -o $dir/../build/_output/bin/$image_name -mod=vendor $dir/../cmd/main.go
