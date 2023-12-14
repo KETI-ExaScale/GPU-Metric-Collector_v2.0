@@ -26,3 +26,5 @@ docker login && \
 
 # push image
 docker push $registry/$image_name:$version
+
+#build finish
