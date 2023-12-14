@@ -12,6 +12,7 @@ func NewClientset() *kubernetes.Clientset {
 		klog.Errorln(err)
 	}
 
+	
 	kubeClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		klog.Errorln(err)
