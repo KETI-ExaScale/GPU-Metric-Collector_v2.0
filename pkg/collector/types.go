@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
-	"k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -32,10 +31,10 @@ const (
 
 type MetricCollector struct {
 	metric.UnimplementedMetricCollectorServer
-	HostKubeClient  *kubernetes.Clientset
-	SafeMultiMetric *SafeMultiMetric
-	Interval        *time.Duration
-	NetworkRequest  *http.Request
+	HostKubeClient     *kubernetes.Clientset
+	SafeMultiMetric    *SafeMultiMetric
+	Interval           *time.Duration
+	StatSummaryRequest *http.Request
 }
 
 type SafeMultiMetric struct {
@@ -52,21 +51,28 @@ type NVLinkStatus struct {
 	P2PBusID      []string
 }
 
-type Network struct {
-	NetworkRxBytes resource.Quantity
-	NetworkTxBytes resource.Quantity
-}
-
 type Summary struct {
-	Node NodeStats `json:"node"`
+	Node NodeStats  `json:"node"`
+	Pods []PodStats `json:"pods"`
 }
 
 type NodeStats struct {
+	CPU     *CPUStats     `json:"cpu,omitempty"`
+	Memory  *MemoryStats  `json:"memory,omitempty"`
 	Network *NetworkStats `json:"network,omitempty"`
+	Fs      *FsStats      `json:"fs,omitempty"`
 }
 
 type NetworkStats struct {
 	Interfaces []InterfaceStats `json:"interfaces,omitempty"`
+}
+
+type PodStats struct {
+	PodRef           PodReference  `json:"podRef"`
+	CPU              *CPUStats     `json:"cpu,omitempty"`
+	Memory           *MemoryStats  `json:"memory,omitempty"`
+	Network          *NetworkStats `json:"network,omitempty"`
+	EphemeralStorage *FsStats      `json:"ephemeral-storage,omitempty"`
 }
 
 type InterfaceStats struct {
@@ -75,6 +81,38 @@ type InterfaceStats struct {
 	RxErrors *uint64 `json:"rxErrors,omitempty"`
 	TxBytes  *uint64 `json:"txBytes,omitempty"`
 	TxErrors *uint64 `json:"txErrors,omitempty"`
+}
+
+type PodReference struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	UID       string `json:"uid"`
+}
+
+type CPUStats struct {
+	Time                 v1.Time `json:"time"`
+	UsageNanoCores       *uint64 `json:"usageNanoCores,omitempty"`
+	UsageCoreNanoSeconds *uint64 `json:"usageCoreNanoSeconds,omitempty"`
+}
+
+type MemoryStats struct {
+	Time            v1.Time `json:"time"`
+	AvailableBytes  *uint64 `json:"availableBytes,omitempty"`
+	UsageBytes      *uint64 `json:"usageBytes,omitempty"`
+	WorkingSetBytes *uint64 `json:"workingSetBytes,omitempty"`
+	RSSBytes        *uint64 `json:"rssBytes,omitempty"`
+	PageFaults      *uint64 `json:"pageFaults,omitempty"`
+	MajorPageFaults *uint64 `json:"majorPageFaults,omitempty"`
+}
+
+type FsStats struct {
+	Time           v1.Time `json:"time"`
+	AvailableBytes *uint64 `json:"availableBytes,omitempty"`
+	CapacityBytes  *uint64 `json:"capacityBytes,omitempty"`
+	UsedBytes      *uint64 `json:"usedBytes,omitempty"`
+	InodesFree     *uint64 `json:"inodesFree,omitempty"`
+	Inodes         *uint64 `json:"inodes,omitempty"`
+	InodesUsed     *uint64 `json:"inodesUsed,omitempty"`
 }
 
 func NewMetricCollector() *MetricCollector {
@@ -97,19 +135,19 @@ func NewMetricCollector() *MetricCollector {
 		Path:   "/stats/summary",
 	}
 
-	networkRequest, err := http.NewRequest("GET", url.String(), nil)
+	statSummaryRequest, err := http.NewRequest("GET", url.String(), nil)
 	if err != nil {
 		KETI_LOG_L3("")
 	}
 
-	networkRequest.Header.Set("Content-Type", "application/json")
-	networkRequest.Header.Set("Authorization", "Bearer "+token)
+	statSummaryRequest.Header.Set("Content-Type", "application/json")
+	statSummaryRequest.Header.Set("Authorization", "Bearer "+token)
 
 	return &MetricCollector{
-		HostKubeClient:  hostKubeClient,
-		SafeMultiMetric: safeMultiMetric,
-		Interval:        &interval,
-		NetworkRequest:  networkRequest,
+		HostKubeClient:     hostKubeClient,
+		SafeMultiMetric:    safeMultiMetric,
+		Interval:           &interval,
+		StatSummaryRequest: statSummaryRequest,
 	}
 }
 
@@ -133,17 +171,18 @@ func NewMultiMetric(hostKubeClient *kubernetes.Clientset) *metric.MultiMetric {
 		NvlinkInfo: make([]*metric.NVLink, 0),
 		NodeMetric: InitNodeMetric(nodeName, hostKubeClient),
 		GpuMetrics: make(map[string]*metric.GPUMetric),
+		PodMetrics: make(map[string]*metric.PodMetric),
 	}
 }
 
 func NewNodeMetric() *metric.NodeMetric {
 	return &metric.NodeMetric{
 		MilliCpuTotal: 0,
-		MilliCpuFree:  0,
+		MilliCpuUsage: 0,
 		MemoryTotal:   0,
-		MemoryFree:    0,
+		MemoryUsage:   0,
 		StorageTotal:  0,
-		StorageFree:   0,
+		StorageUsage:  0,
 		NetworkRx:     0,
 		NetworkTx:     0,
 	}
@@ -170,18 +209,26 @@ func NewGPUMetric() *metric.GPUMetric {
 		Utilization:      0,
 		FanSpeed:         0,
 		PodCount:         0,
-		PodMetrics:       make(map[string]*metric.PodMetric),
 	}
 }
 
 func NewPodMetric() *metric.PodMetric {
 	return &metric.PodMetric{
-		NodeMilliCpuUsed: 0,
-		NodeMemoryUsed:   0,
-		NodeStorageUsed:  0,
-		NodeNetworkRx:    0,
-		NodeNetworkTx:    0,
-		GpuMemoryUsed:    0,
+		PodPid:        "",
+		CpuUsage:      0,
+		MemoryUsage:   0,
+		NetworkRx:     0,
+		NetworkTx:     0,
+		IsGpuPod:      false,
+		PodGpuMetrics: make(map[string]*metric.PodGPUMetric),
+	}
+}
+
+func NewPodGPUMetric() *metric.PodGPUMetric {
+	return &metric.PodGPUMetric{
+		GpuUuid:       "",
+		GpuProcessId:  "",
+		GpuMemoryUsed: 0,
 	}
 }
 
@@ -198,11 +245,13 @@ func InitMultiMetric(hostKubeClient *kubernetes.Clientset) (*metric.MultiMetric,
 
 	nvmlReturn := nvml.Init()
 	if nvmlReturn != nvml.SUCCESS {
+		KETI_LOG_L3(fmt.Sprintf("[error] nvml.Init() not success %v: ", nvmlReturn))
 		multiMetric.GpuCount = 0
 		return multiMetric, nil
 	} else {
 		count, nvmlReturn := nvml.DeviceGetCount()
 		if nvmlReturn != nvml.SUCCESS {
+			KETI_LOG_L3(fmt.Sprintf("[error] nvml.DeviceGetCount() not success %v: ", nvmlReturn))
 			multiMetric.GpuCount = 0
 		} else {
 			multiMetric.GpuCount = int64(count)
@@ -210,7 +259,8 @@ func InitMultiMetric(hostKubeClient *kubernetes.Clientset) (*metric.MultiMetric,
 			for i := 0; i < count; i++ {
 				device, ret := nvml.DeviceGetHandleByIndex(i)
 				if ret != nvml.SUCCESS {
-					log.Fatalf("Unable to get device at index %d: %v", i, ret)
+					KETI_LOG_L3(fmt.Sprintf("[error] unable to get device at index %d: %v", i, ret))
+					continue
 				}
 				uuid, _ := device.GetUUID() //uuid
 				index := int32(i)
@@ -247,7 +297,7 @@ func InitMultiMetric(hostKubeClient *kubernetes.Clientset) (*metric.MultiMetric,
 					if !exists {
 						P2PDevice, err := nvml.DeviceGetHandleByPciBusId(string(bytebus[:]))
 						if err != nvml.SUCCESS {
-							fmt.Println("error can get device handle")
+							KETI_LOG_L3("[error] error can get device handle")
 						} else {
 							P2PIndex, _ := P2PDevice.GetIndex()
 							if P2PIndex > j {
@@ -315,14 +365,20 @@ func InitGPUMetric(i int32) *metric.GPUMetric {
 
 	device, ret := nvml.DeviceGetHandleByIndex(int(gpuMetric.Index))
 	if ret != nvml.SUCCESS {
-		log.Fatalf("Unable to get device at index %d: %v", gpuMetric.Index, ret)
+		log.Fatalf("[error] unable to get device at index %d: %v", gpuMetric.Index, ret)
 	}
 
 	gpuMetric.Index = i
 
-	gpuMetric.GpuName, _ = device.GetName()
+	gpuMetric.GpuName, ret = device.GetName()
+	if ret != nvml.SUCCESS {
+		KETI_LOG_L2(fmt.Sprintf("[error] unable device.GetName(): %v", ret))
+	}
 
-	deviceArchitecture, _ := device.GetArchitecture()
+	deviceArchitecture, ret := device.GetArchitecture()
+	if ret != nvml.SUCCESS {
+		KETI_LOG_L2(fmt.Sprintf("[error] unable device.GetArchitecture(): %v", ret))
+	}
 	switch deviceArchitecture {
 	case nvml.DEVICE_ARCH_KEPLER:
 		gpuMetric.Architecture = "KEPLER"
@@ -354,30 +410,49 @@ func InitGPUMetric(i int32) *metric.GPUMetric {
 		DEVICE_ARCH_UNKNOWN = 4294967295
 	*/
 
-	maxClock, _ := device.GetMaxClockInfo(0)
+	maxClock, ret := device.GetMaxClockInfo(0)
+	if ret != nvml.SUCCESS {
+		KETI_LOG_L2(fmt.Sprintf("[error] unable device.GetMaxClockInfo(0): %v", ret))
+	}
 	gpuMetric.MaxClock = int64(maxClock)
 
-	cudacore, _ := device.GetNumGpuCores()
+	cudacore, ret := device.GetNumGpuCores()
+	if ret != nvml.SUCCESS {
+		KETI_LOG_L2(fmt.Sprintf("[error] unable device.GetNumGpuCores(): %v", ret))
+	}
 	gpuMetric.Cudacore = int64(cudacore)
 
-	buswidth, _ := device.GetMemoryBusWidth()
-	gpuMetric.Bandwidth = float32(buswidth) * float32(gpuMetric.MaxClock) * 2 / 8 / 1e6
+	buswidth, ret := device.GetMemoryBusWidth()
+	if ret != nvml.SUCCESS {
+		KETI_LOG_L2(fmt.Sprintf("[error] unable device.GetMemoryBusWidth(): %v", ret))
+	}
 
+	gpuMetric.Bandwidth = float32(buswidth) * float32(gpuMetric.MaxClock) * 2 / 8 / 1e6
 	gpuMetric.Flops = int64(gpuMetric.MaxClock * gpuMetric.Cudacore * 2 / 1000)
 
-	maxOperativeTemp, _ := device.GetTemperatureThreshold(nvml.TEMPERATURE_THRESHOLD_GPU_MAX)
+	maxOperativeTemp, ret := device.GetTemperatureThreshold(nvml.TEMPERATURE_THRESHOLD_GPU_MAX)
+	if ret != nvml.SUCCESS {
+		KETI_LOG_L2(fmt.Sprintf("[error] unable device.GetTemperatureThreshold(nvml.TEMPERATURE_THRESHOLD_GPU_MAX): %v", ret))
+	}
 	gpuMetric.MaxOperativeTemp = int64(maxOperativeTemp)
 
-	slowdownTemp, _ := device.GetTemperatureThreshold(nvml.TEMPERATURE_THRESHOLD_SLOWDOWN)
+	slowdownTemp, ret := device.GetTemperatureThreshold(nvml.TEMPERATURE_THRESHOLD_SLOWDOWN)
+	if ret != nvml.SUCCESS {
+		KETI_LOG_L2(fmt.Sprintf("[error] unable device.GetTemperatureThreshold(nvml.TEMPERATURE_THRESHOLD_SLOWDOWN): %v", ret))
+	}
 	gpuMetric.SlowdownTemp = int64(slowdownTemp)
 
-	shutdownTemp, _ := device.GetTemperatureThreshold(nvml.TEMPERATURE_THRESHOLD_SHUTDOWN)
+	shutdownTemp, ret := device.GetTemperatureThreshold(nvml.TEMPERATURE_THRESHOLD_SHUTDOWN)
+	if ret != nvml.SUCCESS {
+		KETI_LOG_L2(fmt.Sprintf("[error] unable device.GetTemperatureThreshold(nvml.TEMPERATURE_THRESHOLD_SHUTDOWN): %v", ret))
+	}
 	gpuMetric.ShutdownTemp = int64(shutdownTemp)
 
-	memory, _ := device.GetMemoryInfo()
+	memory, ret := device.GetMemoryInfo()
+	if ret != nvml.SUCCESS {
+		KETI_LOG_L2(fmt.Sprintf("[error] unable device.GetMemoryInfo(): %v", ret))
+	}
 	gpuMetric.MemoryTotal = int64(memory.Total)
-
-	// driverVersion, _ := nvml.SystemGetDriverVersion()
 
 	return gpuMetric
 }
@@ -394,9 +469,9 @@ func DumpMultiMetric(multiMetric *metric.MultiMetric) {
 	}
 
 	KETI_LOG_L1("2. [Node Metric]")
-	KETI_LOG_L1(fmt.Sprintf("2-1. milli cpu (free/total) : %d/%d", multiMetric.NodeMetric.MilliCpuFree, multiMetric.NodeMetric.MilliCpuTotal))
-	KETI_LOG_L1(fmt.Sprintf("2-2. memory (free/total) : %d/%d", multiMetric.NodeMetric.MemoryFree, multiMetric.NodeMetric.MemoryTotal))
-	KETI_LOG_L1(fmt.Sprintf("2-3. storage (free/total) : %d/%d", multiMetric.NodeMetric.StorageFree, multiMetric.NodeMetric.StorageTotal))
+	KETI_LOG_L1(fmt.Sprintf("2-1. milli cpu (used/total) : %d/%d", multiMetric.NodeMetric.MilliCpuUsage, multiMetric.NodeMetric.MilliCpuTotal))
+	KETI_LOG_L1(fmt.Sprintf("2-2. memory (used/total) : %d/%d", multiMetric.NodeMetric.MemoryUsage, multiMetric.NodeMetric.MemoryTotal))
+	KETI_LOG_L1(fmt.Sprintf("2-3. storage (used/total) : %d/%d", multiMetric.NodeMetric.StorageUsage, multiMetric.NodeMetric.StorageTotal))
 	KETI_LOG_L1(fmt.Sprintf("2-4. network (rx/tx) : %d/%d", multiMetric.NodeMetric.NetworkRx, multiMetric.NodeMetric.NetworkTx))
 
 	KETI_LOG_L1("3. [GPU Metric]")
@@ -418,16 +493,22 @@ func DumpMultiMetric(multiMetric *metric.MultiMetric) {
 		KETI_LOG_L1(fmt.Sprintf("3-14. temperature : %d", gpuMetric.Temperature))
 		KETI_LOG_L1(fmt.Sprintf("3-15. utilization : %d", gpuMetric.Utilization))
 		KETI_LOG_L1(fmt.Sprintf("3-16. fan speed : %d", gpuMetric.FanSpeed))
-		KETI_LOG_L1(fmt.Sprintf("3-17. pod count : %d", gpuMetric.PodCount))
+		KETI_LOG_L1(fmt.Sprintf("3-17. energy comsumption : %d", gpuMetric.EnergyConsumption))
+		KETI_LOG_L1(fmt.Sprintf("3-18. pod count : %d", gpuMetric.PodCount))
+	}
 
-		KETI_LOG_L1("4. [GPU Pod Metric]")
-		for podName, podMetric := range gpuMetric.PodMetrics {
-			KETI_LOG_L1(fmt.Sprintf("# Pod Name : %s", podName))
-			KETI_LOG_L1(fmt.Sprintf("4-1. node milli cpu (used) : %d", podMetric.NodeMilliCpuUsed))
-			KETI_LOG_L1(fmt.Sprintf("4-2. node memory (used) : %d", podMetric.NodeMemoryUsed))
-			KETI_LOG_L1(fmt.Sprintf("4-3. node storage (used) : %d", podMetric.NodeStorageUsed))
-			KETI_LOG_L1(fmt.Sprintf("4-4. node network (rx/tx) :  %d/%d", podMetric.NodeNetworkRx, podMetric.NodeNetworkTx))
-			KETI_LOG_L1(fmt.Sprintf("4-5. gpu memory :  %d", podMetric.GpuMemoryUsed))
+	KETI_LOG_L1("4. [Pod Metric]")
+	for podName, podMetric := range multiMetric.PodMetrics {
+		KETI_LOG_L1(fmt.Sprintf("# Pod Name : %s", podName))
+		KETI_LOG_L1(fmt.Sprintf("4-0. pod PID : %s", podMetric.PodPid))
+		KETI_LOG_L1(fmt.Sprintf("4-1. pod milli cpu (used) : %d", podMetric.CpuUsage))
+		KETI_LOG_L1(fmt.Sprintf("4-2. pod memory (used) : %d", podMetric.MemoryUsage))
+		KETI_LOG_L1(fmt.Sprintf("4-3. pod storage (used) : %d", podMetric.StorageUsage))
+		KETI_LOG_L1(fmt.Sprintf("4-4. pod network (rx/tx) :  %d/%d", podMetric.NetworkRx, podMetric.NetworkTx))
+		for _, podGPUMetric := range podMetric.PodGpuMetrics {
+			KETI_LOG_L1(fmt.Sprintf("# GPU UUID : %s", podGPUMetric.GpuUuid))
+			KETI_LOG_L1(fmt.Sprintf("4-5. gpu process id :  %s", podGPUMetric.GpuProcessId))
+			KETI_LOG_L1(fmt.Sprintf("4-6. gpu memory :  %d", podGPUMetric.GpuMemoryUsed))
 		}
 	}
 	KETI_LOG_L1("-----------------------------------\n")
@@ -437,9 +518,9 @@ func DumpMultiMetricForTest(multiMetric *metric.MultiMetric) {
 	KETI_LOG_L3("\n---:: KETI GPU Metric Collector Status ::---")
 
 	KETI_LOG_L3(fmt.Sprintf("# Node Name : %s", multiMetric.NodeName))
-	KETI_LOG_L3(fmt.Sprintf("[Metric #01] node milli cpu (free/total) : %d/%d", multiMetric.NodeMetric.MilliCpuFree, multiMetric.NodeMetric.MilliCpuTotal))
-	KETI_LOG_L3(fmt.Sprintf("[Metric #02] node memory (free/total) : %d/%d", multiMetric.NodeMetric.MemoryFree, multiMetric.NodeMetric.MemoryTotal))
-	KETI_LOG_L3(fmt.Sprintf("[Metric #03] node storage (free/total) : %d/%d", multiMetric.NodeMetric.StorageFree, multiMetric.NodeMetric.StorageTotal))
+	KETI_LOG_L3(fmt.Sprintf("[Metric #01] node milli cpu (used/total) : %d/%d", multiMetric.NodeMetric.MilliCpuUsage, multiMetric.NodeMetric.MilliCpuTotal))
+	KETI_LOG_L3(fmt.Sprintf("[Metric #02] node memory (used/total) : %d/%d", multiMetric.NodeMetric.MemoryUsage, multiMetric.NodeMetric.MemoryTotal))
+	KETI_LOG_L3(fmt.Sprintf("[Metric #03] node storage (used/total) : %d/%d", multiMetric.NodeMetric.StorageUsage, multiMetric.NodeMetric.StorageTotal))
 	KETI_LOG_L3(fmt.Sprintf("[Metric #04] node network rx : %d", multiMetric.NodeMetric.NetworkRx))
 	KETI_LOG_L3(fmt.Sprintf("[Metric #05] node network tx : %d", multiMetric.NodeMetric.NetworkTx))
 
@@ -467,7 +548,7 @@ func DumpMultiMetricForTest(multiMetric *metric.MultiMetric) {
 		KETI_LOG_L3(fmt.Sprintf("[Metric #17] gpu power (used) : %d", gpuMetric.PowerUsed))
 		KETI_LOG_L3(fmt.Sprintf("[Metric #18] gpu temperature : %d", gpuMetric.Temperature))
 		KETI_LOG_L3(fmt.Sprintf("[Metric #19] gpu utilization : %d", gpuMetric.Utilization))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #20] gpu fan speed : %d", gpuMetric.FanSpeed))
+		KETI_LOG_L3(fmt.Sprintf("[Metric #20] gpu energy consumption : %d", gpuMetric.EnergyConsumption))
 	}
 
 	KETI_LOG_L3("----------------------------------------------\n")
