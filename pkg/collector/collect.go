@@ -123,7 +123,6 @@ func (m *MetricCollector) StartGRPCServer(ctx context.Context, wg *sync.WaitGrou
 			klog.Fatalf("failed to serve: %v", err)
 		}
 	}()
-
 	<-ctx.Done()
 	wg.Done()
 }
