@@ -16,15 +16,16 @@ message MultiMetric {
   repeated NVLink nvlink_info = 3;
   NodeMetric node_metric = 4;
   map<string, GPUMetric> gpu_metrics = 5;
+  map<string, PodMetric> pod_metrics = 6;
 }
 
 message NodeMetric {
   int64 milli_cpu_total = 1;
-  int64 milli_cpu_free = 2;
+  int64 milli_cpu_usage = 2;
   int64 memory_total = 3;
-  int64 memory_free = 4;
+  int64 memory_usage = 4;
   int64 storage_total = 5;
-  int64 storage_free = 6;
+  int64 storage_usage = 6;
   int64 network_rx = 7;
   int64 network_tx = 8;
 }
@@ -49,20 +50,24 @@ message GPUMetric {
     int64 utilization = 17;
     int64 fan_speed = 18;
     int64 pod_count = 19;
-    map<string, PodMetric> pod_metrics = 20;
+    int64 energy_consumption = 20;
 }
 
 message PodMetric {
-  uint32 pod_pid = 1;
-  string container_id = 2;
-  int32 index = 3;
-  int32 gpu_mps_count = 4;
-  int64 node_milli_cpu_used = 5;
-  int64 node_memory_used = 6;
-  int64 node_storage_used = 7;
-  int64 node_network_rx = 8;
-  int64 node_network_tx = 9;
-  int64 gpu_memory_used = 10;
+  string pod_pid = 1;
+  int64 cpu_usage = 2;
+  int64 memory_usage = 3;
+  int64 storage_usage = 4;
+  int64 network_rx = 5;
+  int64 network_tx = 6;
+  bool is_gpu_pod = 7;
+  map<string, PodGPUMetric> pod_gpu_metrics = 8;
+}
+
+message PodGPUMetric {
+  string gpu_uuid = 1;
+  string gpu_process_id = 2;
+  int64 gpu_memory_used = 3;
 }
 
 message NVLink {
