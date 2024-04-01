@@ -251,8 +251,8 @@ func (m *MetricCollector) MetricCollectingCycle(ctx context.Context) {
 
 	}
 
-	DumpMultiMetric(m.SafeMultiMetric.MultiMetric) // DEBUGG LEVEL = 1 일때 출력 수행
-	// DumpMultiMetricForTest(m.SafeMultiMetric.MultiMetric) // 항상 (정량) 출력 수행
+	// DumpMultiMetric(m.SafeMultiMetric.MultiMetric) // DEBUGG LEVEL = 1 일때 출력 수행
+	DumpMultiMetricForTest(m.SafeMultiMetric.MultiMetric) // 항상 (정량) 출력 수행
 }
 
 func (m *MetricCollector) GetMultiMetric(context.Context, *metric.Request) (*metric.MultiMetric, error) {

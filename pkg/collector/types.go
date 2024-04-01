@@ -244,7 +244,7 @@ func InitMultiMetric(hostKubeClient *kubernetes.Clientset) (*metric.MultiMetric,
 	multiMetric := NewMultiMetric(hostKubeClient)
 
 	nvmlReturn := nvml.Init()
-	
+
 	if nvmlReturn != nvml.SUCCESS {
 		KETI_LOG_L3(fmt.Sprintf("[error] nvml.Init() not success %v: ", nvmlReturn))
 		multiMetric.GpuCount = 0
@@ -464,16 +464,22 @@ func DumpMultiMetric(multiMetric *metric.MultiMetric) {
 	KETI_LOG_L1("1. [Multi Metric]")
 	KETI_LOG_L1(fmt.Sprintf("1-1. node name : %s", multiMetric.NodeName))
 	KETI_LOG_L1(fmt.Sprintf("1-2. gpu count : %d", multiMetric.GpuCount))
-	KETI_LOG_L1("1-3. nvlink list ")
-	for _, nvlink := range multiMetric.NvlinkInfo {
-		KETI_LOG_L1(fmt.Sprintf("%s:%s lane:%d", nvlink.Gpu1Uuid, nvlink.Gpu2Uuid, nvlink.Lanecount))
+	if len(multiMetric.NvlinkInfo) != 0 {
+		KETI_LOG_L3("1-3. gpu nvlink connected : true")
+		for i, nvlink := range multiMetric.NvlinkInfo {
+			KETI_LOG_L1(fmt.Sprintf(" - link %d gpu a : %s", i, nvlink.Gpu1Uuid))
+			KETI_LOG_L1(fmt.Sprintf(" - link %d gpu b : %s", i, nvlink.Gpu2Uuid))
+			KETI_LOG_L1(fmt.Sprintf(" - link %d lane : %d", i, nvlink.Lanecount))
+		}
+	} else {
+		KETI_LOG_L3("1-3. gpu nvlink connected : false")
 	}
 
 	KETI_LOG_L1("2. [Node Metric]")
-	KETI_LOG_L1(fmt.Sprintf("2-1. milli cpu (used/total) : %d/%d", multiMetric.NodeMetric.MilliCpuUsage, multiMetric.NodeMetric.MilliCpuTotal))
-	KETI_LOG_L1(fmt.Sprintf("2-2. memory (used/total) : %d/%d", multiMetric.NodeMetric.MemoryUsage, multiMetric.NodeMetric.MemoryTotal))
-	KETI_LOG_L1(fmt.Sprintf("2-3. storage (used/total) : %d/%d", multiMetric.NodeMetric.StorageUsage, multiMetric.NodeMetric.StorageTotal))
-	KETI_LOG_L1(fmt.Sprintf("2-4. network (rx/tx) : %d/%d", multiMetric.NodeMetric.NetworkRx, multiMetric.NodeMetric.NetworkTx))
+	KETI_LOG_L1(fmt.Sprintf("2-1. node cpu (used/total) : %d/%d (milli core)", multiMetric.NodeMetric.MilliCpuUsage, multiMetric.NodeMetric.MilliCpuTotal))
+	KETI_LOG_L1(fmt.Sprintf("2-2. node memory (used/total) : %d/%d (byte)", multiMetric.NodeMetric.MemoryUsage, multiMetric.NodeMetric.MemoryTotal))
+	KETI_LOG_L1(fmt.Sprintf("2-3. node storage (used/total) : %d/%d (byte)", multiMetric.NodeMetric.StorageUsage, multiMetric.NodeMetric.StorageTotal))
+	KETI_LOG_L1(fmt.Sprintf("2-4. node network (rx/tx) : %d/%d (byte)", multiMetric.NodeMetric.NetworkRx, multiMetric.NodeMetric.NetworkTx))
 
 	KETI_LOG_L1("3. [GPU Metric]")
 	for gpuName, gpuMetric := range multiMetric.GpuMetrics {
@@ -518,16 +524,18 @@ func DumpMultiMetricForTest(multiMetric *metric.MultiMetric) {
 	KETI_LOG_L3("\n---:: KETI GPU Metric Collector Status ::---")
 
 	KETI_LOG_L3(fmt.Sprintf("# Node Name : %s", multiMetric.NodeName))
-	KETI_LOG_L3(fmt.Sprintf("[Metric #01] node milli cpu (used/total) : %d/%d", multiMetric.NodeMetric.MilliCpuUsage, multiMetric.NodeMetric.MilliCpuTotal))
-	KETI_LOG_L3(fmt.Sprintf("[Metric #02] node memory (used/total) : %d/%d", multiMetric.NodeMetric.MemoryUsage, multiMetric.NodeMetric.MemoryTotal))
-	KETI_LOG_L3(fmt.Sprintf("[Metric #03] node storage (used/total) : %d/%d", multiMetric.NodeMetric.StorageUsage, multiMetric.NodeMetric.StorageTotal))
-	KETI_LOG_L3(fmt.Sprintf("[Metric #04] node network rx : %d", multiMetric.NodeMetric.NetworkRx))
-	KETI_LOG_L3(fmt.Sprintf("[Metric #05] node network tx : %d", multiMetric.NodeMetric.NetworkTx))
+	KETI_LOG_L3(fmt.Sprintf("[Metric #01] node milli cpu (used/total) : %d/%d (milli core)", multiMetric.NodeMetric.MilliCpuUsage, multiMetric.NodeMetric.MilliCpuTotal))
+	KETI_LOG_L3(fmt.Sprintf("[Metric #02] node memory (used/total) : %d/%d (byte)", multiMetric.NodeMetric.MemoryUsage, multiMetric.NodeMetric.MemoryTotal))
+	KETI_LOG_L3(fmt.Sprintf("[Metric #03] node storage (used/total) : %d/%d (byte)", multiMetric.NodeMetric.StorageUsage, multiMetric.NodeMetric.StorageTotal))
+	KETI_LOG_L3(fmt.Sprintf("[Metric #04] node network rx : %d (byte)", multiMetric.NodeMetric.NetworkRx))
+	KETI_LOG_L3(fmt.Sprintf("[Metric #05] node network tx : %d (byte)", multiMetric.NodeMetric.NetworkTx))
 
 	if len(multiMetric.NvlinkInfo) != 0 {
 		KETI_LOG_L3("[Metric #06] gpu nvlink connected : true")
-		for _, nvlink := range multiMetric.NvlinkInfo {
-			KETI_LOG_L1(fmt.Sprintf(">>> %s:%s lane:%d", nvlink.Gpu1Uuid, nvlink.Gpu2Uuid, nvlink.Lanecount))
+		for i, nvlink := range multiMetric.NvlinkInfo {
+			KETI_LOG_L1(fmt.Sprintf("- link %d gpu a : %s", i, nvlink.Gpu1Uuid))
+			KETI_LOG_L1(fmt.Sprintf("- link %d gpu b : %s", i, nvlink.Gpu2Uuid))
+			KETI_LOG_L1(fmt.Sprintf("- link %d lane : %d", i, nvlink.Lanecount))
 		}
 	} else {
 		KETI_LOG_L3("[Metric #06] gpu nvlink connected : false")
@@ -535,20 +543,20 @@ func DumpMultiMetricForTest(multiMetric *metric.MultiMetric) {
 
 	for gpuName, gpuMetric := range multiMetric.GpuMetrics {
 		KETI_LOG_L3(fmt.Sprintf("# GPU UUID : %s", gpuName))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #07] gpu name : %s", gpuMetric.GpuName))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #08] gpu architecture : %s", gpuMetric.Architecture))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #09] gpu max clock : %d", gpuMetric.MaxClock))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #10] gpu cudacore : %d", gpuMetric.Cudacore))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #11] gpu bandwidth : %f", gpuMetric.Bandwidth))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #12] gpu flops : %d", gpuMetric.Flops))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #13] gpu max operative temperature : %d", gpuMetric.MaxOperativeTemp))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #14] gpu slow down temperature : %d", gpuMetric.SlowdownTemp))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #15] gpu shut dowm temperature : %d", gpuMetric.ShutdownTemp))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #16] gpu memory (used/total) : %d/%d", gpuMetric.MemoryUsed, gpuMetric.MemoryTotal))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #17] gpu power (used) : %d", gpuMetric.PowerUsed))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #18] gpu temperature : %d", gpuMetric.Temperature))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #19] gpu utilization : %d", gpuMetric.Utilization))
-		KETI_LOG_L3(fmt.Sprintf("[Metric #20] gpu energy consumption : %d", gpuMetric.EnergyConsumption))
+		fmt.Println("[Metric #07] gpu name : ", gpuMetric.GpuName)
+		fmt.Println("[Metric #08] gpu architecture : ", gpuMetric.Architecture)
+		fmt.Println("[Metric #09] gpu max clock (MHz) : ", gpuMetric.MaxClock)
+		fmt.Println("[Metric #10] gpu cudacore : ", gpuMetric.Cudacore)
+		fmt.Println("[Metric #11] gpu bandwidth (GB/s) : ", gpuMetric.Bandwidth)
+		fmt.Println("[Metric #12] gpu flops : ", gpuMetric.Flops)
+		fmt.Println("[Metric #13] gpu max operative temperature (celsius) : ", gpuMetric.MaxOperativeTemp)
+		fmt.Println("[Metric #14] gpu slow down temperature (celsius) : ", gpuMetric.SlowdownTemp)
+		fmt.Println("[Metric #15] gpu shut dowm temperature (celsius) : ", gpuMetric.ShutdownTemp)
+		fmt.Println("[Metric #16] gpu memory used (byte) : ", gpuMetric.MemoryUsed)
+		fmt.Println("[Metric #17] gpu power used (watt) : ", gpuMetric.PowerUsed)
+		fmt.Println("[Metric #18] gpu temperature (celsius) : ", gpuMetric.Temperature)
+		fmt.Println("[Metric #19] gpu memory utilization (%) : ", gpuMetric.Utilization)
+		fmt.Println("[Metric #20] gpu energy consumption (kw/h) : ", gpuMetric.EnergyConsumption)
 	}
 
 	KETI_LOG_L3("----------------------------------------------\n")
