@@ -54,14 +54,13 @@ message GPUMetric {
 }
 
 message PodMetric {
-  string pod_pid = 1;
-  int64 cpu_usage = 2;
-  int64 memory_usage = 3;
-  int64 storage_usage = 4;
-  int64 network_rx = 5;
-  int64 network_tx = 6;
-  bool is_gpu_pod = 7;
-  map<string, PodGPUMetric> pod_gpu_metrics = 8;
+  int64 cpu_usage = 1;
+  int64 memory_usage = 2;
+  int64 storage_usage = 3;
+  int64 network_rx = 4;
+  int64 network_tx = 5;
+  bool is_gpu_pod = 6;
+  map<string, PodGPUMetric> pod_gpu_metrics = 7;
 }
 
 message PodGPUMetric {

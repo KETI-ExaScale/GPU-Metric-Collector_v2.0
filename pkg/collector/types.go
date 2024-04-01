@@ -214,9 +214,9 @@ func NewGPUMetric() *metric.GPUMetric {
 
 func NewPodMetric() *metric.PodMetric {
 	return &metric.PodMetric{
-		PodPid:        "",
 		CpuUsage:      0,
 		MemoryUsage:   0,
+		StorageUsage:  0,
 		NetworkRx:     0,
 		NetworkTx:     0,
 		IsGpuPod:      false,
@@ -500,7 +500,6 @@ func DumpMultiMetric(multiMetric *metric.MultiMetric) {
 	KETI_LOG_L1("4. [Pod Metric]")
 	for podName, podMetric := range multiMetric.PodMetrics {
 		KETI_LOG_L1(fmt.Sprintf("# Pod Name : %s", podName))
-		KETI_LOG_L1(fmt.Sprintf("4-0. pod PID : %s", podMetric.PodPid))
 		KETI_LOG_L1(fmt.Sprintf("4-1. pod milli cpu (used) : %d", podMetric.CpuUsage))
 		KETI_LOG_L1(fmt.Sprintf("4-2. pod memory (used) : %d", podMetric.MemoryUsage))
 		KETI_LOG_L1(fmt.Sprintf("4-3. pod storage (used) : %d", podMetric.StorageUsage))
