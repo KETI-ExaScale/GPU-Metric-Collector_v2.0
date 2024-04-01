@@ -244,6 +244,7 @@ func InitMultiMetric(hostKubeClient *kubernetes.Clientset) (*metric.MultiMetric,
 	multiMetric := NewMultiMetric(hostKubeClient)
 
 	nvmlReturn := nvml.Init()
+	
 	if nvmlReturn != nvml.SUCCESS {
 		KETI_LOG_L3(fmt.Sprintf("[error] nvml.Init() not success %v: ", nvmlReturn))
 		multiMetric.GpuCount = 0
