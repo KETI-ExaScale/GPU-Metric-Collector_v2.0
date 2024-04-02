@@ -175,11 +175,35 @@ func (m *MetricCollector) MetricCollectingCycle(ctx context.Context) {
 			var nvmlProcess []nvml.ProcessInfo
 			nvmlProcess, ret = device.GetMPSComputeRunningProcesses()
 			if ret != nvml.SUCCESS {
-				KETI_LOG_L2(fmt.Sprintf("[error] unable to get nvml process : %v", ret))
+				KETI_LOG_L2(fmt.Sprintf("[error] unable to get nvml process1 : %v", ret))
 			}
+
+			var nvmlProcess2 []nvml.ProcessInfo
+			nvmlProcess2, ret = device.GetComputeRunningProcesses()
+			if ret != nvml.SUCCESS {
+				KETI_LOG_L2(fmt.Sprintf("[error] unable to get nvml process2 : %v", ret))
+			}
+
+			fmt.Println("## GetMPSComputeRunningProcesses ", nvmlProcess)
+			for _, process := range nvmlProcess {
+				fmt.Println("-- ComputeInstanceId ", process.ComputeInstanceId)
+				fmt.Println("-- GpuInstanceId ", process.GpuInstanceId)
+				fmt.Println("-- Pid ", process.Pid)
+				fmt.Println("-- UsedGpuMemory ", process.UsedGpuMemory)
+			}
+			fmt.Println("## GetComputeRunningProcesses ", nvmlProcess2)
+			for _, process := range nvmlProcess2 {
+				fmt.Println("-- ComputeInstanceId ", process.ComputeInstanceId)
+				fmt.Println("-- GpuInstanceId ", process.GpuInstanceId)
+				fmt.Println("-- Pid ", process.Pid)
+				fmt.Println("-- UsedGpuMemory ", process.UsedGpuMemory)
+			}
+
+			gpuMetric.PodCount = 0
 
 			// get gpu kubnernetes process info
 			for _, process := range nvmlProcess {
+				fmt.Println("#", process.Pid)
 				pid := strconv.FormatUint(uint64(process.Pid), 10)
 
 				cgroupfile, err := os.Open("/proc/" + pid + "/cgroup")
@@ -214,12 +238,12 @@ func (m *MetricCollector) MetricCollectingCycle(ctx context.Context) {
 						}
 
 					}
-					// break // for문으로 전체 돌면서 뭐지?/
-					fmt.Println("PodContainerID:", podContainerID)
 				}
 				podGPUMetrics[podContainerID] = podGPUMetric
 			}
 		}
+
+		fmt.Println("##", m.SafeMultiMetric.MultiMetric.NodeName)
 
 		// pod container id <-> gpu process pid mapping
 		selector := fields.SelectorFromSet(fields.Set{
