@@ -124,7 +124,7 @@ func (m *MetricCollector) MetricCollectingCycle(ctx context.Context) {
 				KETI_LOG_L2(fmt.Sprintf("[error] unable to get device at uuid : %v", ret))
 			}
 
-			memory, ret := device.GetMemoryInfo()
+			memory, ret := device.GetMemoryInfo_v2()
 			gpuMetric.MemoryUsed = int64(memory.Used)
 			if ret != nvml.SUCCESS {
 				KETI_LOG_L2(fmt.Sprintf("[error] unable to get memory info : %v", ret))
@@ -178,33 +178,20 @@ func (m *MetricCollector) MetricCollectingCycle(ctx context.Context) {
 				KETI_LOG_L2(fmt.Sprintf("[error] unable to get nvml process1 : %v", ret))
 			}
 
-			var nvmlProcess2 []nvml.ProcessInfo
-			nvmlProcess2, ret = device.GetComputeRunningProcesses()
-			if ret != nvml.SUCCESS {
-				KETI_LOG_L2(fmt.Sprintf("[error] unable to get nvml process2 : %v", ret))
-			}
-
-			fmt.Println("## GetMPSComputeRunningProcesses ", nvmlProcess)
-			for _, process := range nvmlProcess {
-				fmt.Println("-- ComputeInstanceId ", process.ComputeInstanceId)
-				fmt.Println("-- GpuInstanceId ", process.GpuInstanceId)
-				fmt.Println("-- Pid ", process.Pid)
-				fmt.Println("-- UsedGpuMemory ", process.UsedGpuMemory)
-			}
-			fmt.Println("## GetComputeRunningProcesses ", nvmlProcess2)
-			for _, process := range nvmlProcess2 {
-				fmt.Println("-- ComputeInstanceId ", process.ComputeInstanceId)
-				fmt.Println("-- GpuInstanceId ", process.GpuInstanceId)
-				fmt.Println("-- Pid ", process.Pid)
-				fmt.Println("-- UsedGpuMemory ", process.UsedGpuMemory)
-			}
+			// [NOTICE] device.GetMPSComputeRunningProcesses() function get wrong result !!!
+			// - go-nvml version : github.com/NVIDIA/go-nvml v0.12.0-3
+			// - cuda version : nvidia/cuda:11.4.3-base-ubuntu20.04
 
 			gpuMetric.PodCount = 0
 
 			// get gpu kubnernetes process info
 			for _, process := range nvmlProcess {
-				fmt.Println("#", process.Pid)
+
 				pid := strconv.FormatUint(uint64(process.Pid), 10)
+
+				if pid == "0" {
+					pid = strconv.FormatUint(uint64(process.UsedGpuMemory), 10)
+				}
 
 				cgroupfile, err := os.Open("/proc/" + pid + "/cgroup")
 				if err != nil {
@@ -243,8 +230,6 @@ func (m *MetricCollector) MetricCollectingCycle(ctx context.Context) {
 			}
 		}
 
-		fmt.Println("##", m.SafeMultiMetric.MultiMetric.NodeName)
-
 		// pod container id <-> gpu process pid mapping
 		selector := fields.SelectorFromSet(fields.Set{
 			"spec.nodeName":      m.SafeMultiMetric.MultiMetric.NodeName,
@@ -264,8 +249,6 @@ func (m *MetricCollector) MetricCollectingCycle(ctx context.Context) {
 			for _, podContainer := range podItem.Status.ContainerStatuses {
 				containerID := podContainer.ContainerID
 				trimmedcontainerID := strings.TrimPrefix(containerID, "docker://")
-				fmt.Println("container ID:", containerID, "trimmedContainer ID:", trimmedcontainerID)
-				fmt.Println("Input GPU Metric, PodName: ", podName)
 				if podGPUMetric, ok := podGPUMetrics[trimmedcontainerID]; ok {
 					m.SafeMultiMetric.MultiMetric.PodMetrics[podName].PodGpuMetrics[trimmedcontainerID] = podGPUMetric
 					m.SafeMultiMetric.MultiMetric.PodMetrics[podName].IsGpuPod = true
