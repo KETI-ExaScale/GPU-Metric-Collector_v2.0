@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: keti-gpu-metric-collector
+  name: keti-multi-metric-collector
   namespace: gpu
 spec:
   selector:
