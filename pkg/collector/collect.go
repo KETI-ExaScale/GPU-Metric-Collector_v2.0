@@ -181,6 +181,7 @@ func (m *MetricCollector) MetricCollectingCycle(ctx context.Context) {
 			// [NOTICE] device.GetMPSComputeRunningProcesses() function get wrong result !!!
 			// - go-nvml version : github.com/NVIDIA/go-nvml v0.12.0-3
 			// - cuda version : nvidia/cuda:11.4.3-base-ubuntu20.04
+			// (write by : kjh)
 
 			gpuMetric.PodCount = 0
 
